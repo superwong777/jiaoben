@@ -1,0 +1,41 @@
+{
+  "color" : "rgba(34, 158, 217,1)",
+  "iconImage" : "",
+  "entry" : "index.tsx",
+  "author" : null,
+  "remoteResource" : null,
+  "localizedDescriptions" : {
+    "pt" : "",
+    "zh" : "查看并刷新 Telegram 频道或群组订阅人数的小组件",
+    "en" : "Widget for Telegram channel/group audience counts",
+    "ja" : "",
+    "ru" : "",
+    "es" : "",
+    "it" : "",
+    "fr" : "",
+    "de" : ""
+  },
+  "permissions" : null,
+  "icon" : "paperplane.fill",
+  "contributors" : [
+
+  ],
+  "intentInputTypes" : [
+
+  ],
+  "description" : "查看并刷新 Telegram 频道或群组订阅人数的小组件",
+  "runInApp" : false,
+  "name" : "TG订阅管理",
+  "localizedNames" : {
+    "pt" : "",
+    "zh" : "TG订阅管理",
+    "en" : "TG Audience",
+    "ja" : "",
+    "ru" : "",
+    "es" : "",
+    "it" : "",
+    "fr" : "",
+    "de" : ""
+  },
+  "version" : "1.1.0"
+}

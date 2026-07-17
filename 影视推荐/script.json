@@ -1,0 +1,45 @@
+{
+  "iconImage" : null,
+  "localizedDescriptions" : {
+    "pt" : "",
+    "it" : "",
+    "zh" : "多源影视海报小组件，支持主题三态与每日换图",
+    "de" : "",
+    "fr" : "",
+    "ru" : "",
+    "es" : "",
+    "ja" : "",
+    "en" : "Multi-source movie poster widget with theme modes and daily rotation"
+  },
+  "entry" : "index.tsx",
+  "color" : "rgba(238, 92, 98,1)",
+  "contributors" : [
+
+  ],
+  "localizedNames" : {
+    "pt" : "",
+    "it" : "",
+    "zh" : "影视推荐",
+    "de" : "",
+    "fr" : "",
+    "ru" : "",
+    "es" : "",
+    "ja" : "",
+    "en" : "Movie Trending"
+  },
+  "runInApp" : false,
+  "version" : "1.1.0",
+  "author" : null,
+  "permissions" : null,
+  "intentInputTypes" : [
+
+  ],
+  "description" : "多源影视海报小组件：支持自动/强制浅色/强制深色主题，海报按本地日期每日换组。",
+  "remoteResource" : {
+    "hash" : "ab306592c1ab98ebe9a282d3cad36e46",
+    "autoUpdateInterval" : 0,
+    "url" : "https://github.com/ScriptingApp/Community-Scripts/raw/refs/heads/main/影视推荐.scripting"
+  },
+  "icon" : "chart.line.uptrend.xyaxis",
+  "name" : "影视推荐"
+}

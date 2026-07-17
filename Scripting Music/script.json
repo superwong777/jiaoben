@@ -1,0 +1,49 @@
+{
+  "iconImage" : "",
+  "localizedDescriptions" : {
+    "ru" : "",
+    "pt" : "",
+    "it" : "",
+    "es" : "",
+    "fr" : "",
+    "en" : "",
+    "ja" : "",
+    "de" : "",
+    "zh" : ""
+  },
+  "entry" : "index.tsx",
+  "color" : "rgba(255, 48, 0, 1.00)",
+  "contributors" : [
+
+  ],
+  "localizedNames" : {
+    "es" : "",
+    "ru" : "",
+    "it" : "",
+    "fr" : "",
+    "de" : "",
+    "ja" : "",
+    "en" : "",
+    "pt" : "",
+    "zh" : ""
+  },
+  "runInApp" : false,
+  "version" : "1.0.0",
+  "author" : {
+    "email" : null,
+    "homepage" : "https:\/\/github.com\/001ProMax",
+    "name" : "001"
+  },
+  "permissions" : null,
+  "intentInputTypes" : [
+
+  ],
+  "description" : "Music Player by https:\/\/github.com\/thomfang",
+  "remoteResource" : {
+    "url" : "https:\/\/github.com\/ScriptingApp\/Community-Scripts\/raw\/refs\/heads\/main\/Scripting Music.scripting",
+    "autoUpdateInterval" : 600,
+    "hash" : "2b1a465941cf5d4e7b6fee5b299a29e6"
+  },
+  "icon" : "music.note",
+  "name" : "Scripting Music"
+}
