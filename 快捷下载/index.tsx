@@ -13,7 +13,7 @@
 import {
   Text, TextField, Button, List, Section, HStack, VStack, ZStack,
   Image, Rectangle, Spacer,
-  NavigationStack, Navigation, ScrollView, ScrollViewReader,
+  NavigationStack, Navigation, ScrollView, ScrollViewReader, LazyVGrid,
   ProgressView, Tab, TabView,
   fetch, useState, useEffect, useRef, useObservable,
   Script, Intent
@@ -71,6 +71,7 @@ interface MediaResult {
   author?: string
   video_url?: string | null
   images?: string[]
+  imagePreviews?: string[]
   cover_url?: string | null
   link?: string
   error?: string
@@ -79,6 +80,7 @@ interface MediaResult {
   videoUrls?: string[]
   /** 抖音视频 URI（play_addr.uri），用于通过 aweme.snssdk.com 获取指定画质 */
   videoUri?: string
+  debug?: string[]
 }
 
 const PLATFORMS: [string, RegExp[]][] = [
@@ -1157,6 +1159,10 @@ function get(obj: any, keys: string[]): any {
   return cur
 }
 
+function getXhsPreviewImageUrl(rawUrl: string): string {
+  return getRawImageUrl(rawUrl)
+}
+
 function getRawImageUrl(imgUrl: string): string {
   if (!imgUrl) return ''
   const clean = imgUrl.split('?')[0].split('@')[0].replace(/\\u002F/g, '/')
@@ -1166,8 +1172,17 @@ function getRawImageUrl(imgUrl: string): string {
 }
 
 function isLikelyXhsNoteImageUrl(url: string): boolean {
-  return /https?:\/\/[^\s"'<>]+xhscdn\.com\//i.test(url)
-    && /\/(spectrum|note_pre_post_uhdr|notes_pre_post|notes_uhdr)\//i.test(url)
+  if (!/^https?:\/\/[^\s"'<>]+xhscdn\.com\//i.test(url)) return false
+  if (/avatar|profile|comment|emoji|sticker|icon|logo/i.test(url)) return false
+  return /\/(spectrum|note_pre_post_uhdr|notes_pre_post|notes_uhdr)\//i.test(url)
+    || /sns-img-[^/]+\.xhscdn\.com\/[^\s"'<>/]{16,}/i.test(url)
+}
+
+function buildXhsImageUrlFromId(value: any): string {
+  if (typeof value !== 'string') return ''
+  const id = value.trim().replace(/^["']|["']$/g, '')
+  if (!/^[a-zA-Z0-9_-]{16,}$/.test(id)) return ''
+  return `https://sns-img-hw.xhscdn.com/${id}`
 }
 
 function pushXhsImageUrl(set: Set<string>, value: any) {
@@ -1203,8 +1218,13 @@ function collectXhsImagesDeep(source: any): string[] {
       for (const item of node) walk(item, depth + 1)
       return
     }
-    for (const key of ['urlDefault', 'urlSizeLarge', 'urlPre', 'url', 'src', 'originalUrl']) {
-      pushXhsImageUrl(found, node[key])
+    for (const key of ['urlDefault', 'urlSizeLarge', 'urlPre', 'url', 'src', 'originalUrl', 'traceId', 'trace_id', 'fileId', 'file_id']) {
+      if (/^(traceId|trace_id|fileId|file_id)$/.test(key)) {
+        const built = buildXhsImageUrlFromId(node[key])
+        if (built) found.add(built)
+      } else {
+        pushXhsImageUrl(found, node[key])
+      }
     }
     const infoList = node.infoList || node.info_list
     if (Array.isArray(infoList)) {
@@ -1222,7 +1242,7 @@ function collectXhsImagesDeep(source: any): string[] {
 function extractXhsImagesFromHtml(html: string): string[] {
   const found = new Set<string>()
   const normalizedHtml = html.replace(/\\u002F/g, '/').replace(/\\\//g, '/')
-  const re = /https?:\/\/[^\s"'<>]+?xhscdn\.com[^\s"'<>]+?(?:spectrum|note_pre_post_uhdr|notes_pre_post|notes_uhdr)[^\s"'<>]*/gi
+  const re = /https?:\/\/[^\s"'<>]+?xhscdn\.com[^\s"'<>]*/gi
   let m: RegExpExecArray | null
   while ((m = re.exec(normalizedHtml)) && found.size < 36) {
     pushXhsImageUrl(found, m[0])
@@ -1255,15 +1275,25 @@ async function parseXhsImagesFast(url: string, headers: Record<string, string>):
     const noteImages = note ? collectXhsImagesDeep(note) : []
     const stateImages = init ? collectXhsImagesDeep(init) : []
     const htmlImages = extractXhsImagesFromHtml(html)
-    const images = uniqueUrls([...noteImages, ...stateImages, ...htmlImages]).slice(0, 18)
+    const images = uniqueUrls([...noteImages, ...stateImages, ...htmlImages])
+      .filter((imageUrl) => !/avatar|profile|comment|emoji|sticker|icon|logo/i.test(imageUrl))
+      .slice(0, 18)
     if (!images.length) return null
+    const debug = [
+      `小红书图文快速解析：noteId=${noteId || 'unknown'}`,
+      `候选图片：note=${noteImages.length} state=${stateImages.length} html=${htmlImages.length}`,
+      `最终保留：${images.length} 张`,
+      `页面：${finalUrl}`,
+    ]
     return {
       success: true,
       platform: 'xiaohongshu',
       title: note ? (note.title || note.desc || extractXhsTitleFromHtml(html) || '').slice(0, 100) : extractXhsTitleFromHtml(html),
       images,
-      cover_url: images[0] || null,
+      imagePreviews: images.map(getXhsPreviewImageUrl),
+      cover_url: getXhsPreviewImageUrl(images[0]) || images[0] || null,
       link: finalUrl,
+      debug,
     }
   } catch {
     return null
@@ -3700,7 +3730,9 @@ async function saveVideoToPhotos(
   throw new Error(`下载失败: ${lastError}`)
 }
 
-async function saveImagesToPhotos(imageUrls: string[], title?: string, referer?: string, platform?: string): Promise<{ msg: string; bytes: number; path?: string }> {
+type ImageSaveResult = { msg: string; bytes: number; path?: string; total: number; saved: number; failed: number }
+
+async function saveImagesToPhotos(imageUrls: string[], title?: string, referer?: string, platform?: string): Promise<ImageSaveResult> {
   let totalBytes = 0
   const desktopUA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36'
   let count = 0
@@ -3741,7 +3773,14 @@ async function saveImagesToPhotos(imageUrls: string[], title?: string, referer?:
     }
   }
   if (count === 0) throw new Error(`保存图片到相册失败：${lastError || '未知错误'}`)
-  return { msg: `图片已保存到系统相册，共 ${count} 张`, bytes: totalBytes }
+  const failed = Math.max(0, deduped.length - count)
+  return {
+    msg: failed > 0 ? `图片已保存 ${count}/${deduped.length} 张，失败 ${failed} 张` : `图片已保存到系统相册，共 ${count} 张`,
+    bytes: totalBytes,
+    total: deduped.length,
+    saved: count,
+    failed,
+  }
 }
 
 // ─── Cookie 管理 ──────────────────────────────────────
@@ -3869,6 +3908,31 @@ function formatDate(ts: number): string {
   return new Date(ts).toLocaleDateString("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" })
 }
 
+function failureAdvice(message: string, platform?: string): string {
+  const lower = message.toLowerCase()
+  if (/未识别|unsupported|支持的平台/.test(message)) return "请确认剪贴板里包含完整分享链接，而不是纯文案或被截断的短链。"
+  if (/未找到|媒体|图片|video|image/.test(message)) return platform === "xiaohongshu"
+    ? "如果原帖确实有内容，通常是页面返回不完整、Cookie 过期，或该笔记需要登录后才能看到完整图片。"
+    : "可以尝试复制 App 分享出的原始链接，或在设置里补充对应平台 Cookie。"
+  if (/403|401|登录|cookie|captcha|安全验证|forbidden/.test(lower + message)) return "平台可能要求登录或安全验证。请在设置里更新 Cookie 后重试。"
+  if (/timeout|timed out|网络|network|请求失败/.test(lower + message)) return "网络请求超时或被拦截，可以稍后重试，或切换网络后再解析。"
+  if (/保存|相册|photo|photos/.test(lower + message)) return "请确认相册权限可用；如果只失败部分图片，通常是个别 CDN 链接临时不可访问。"
+  return "可以查看日志里的平台、候选数量和 HTTP 状态，优先确认链接是否需要登录或 Cookie。"
+}
+
+function historyMediaSummary(item: HistoryRecord): string {
+  const kind = item.mediaKind || (item.videoUrl ? "video" : "image")
+  const count = item.mediaCount || 1
+  const saved = item.savedCount
+  const failed = item.failedCount || 0
+  const typeText = kind === "mixed" ? "视频+图片" : kind === "video" ? "视频" : "图片合集"
+  const countText = kind === "video" ? "1 项" : kind === "mixed" ? `${count} 项` : `${count} 张`
+  const saveText = typeof saved === "number"
+    ? failed > 0 ? `已保存 ${saved}/${count}` : `已保存 ${saved}`
+    : item.bytesWritten > 0 ? formatBytes(item.bytesWritten) : "已保存到相册"
+  return `${typeText} · ${countText} · ${saveText}`
+}
+
 // ─── Intent URL 解析 ──────────────────────────────────
 
 function resolveIntentURL(): string | null {
@@ -3954,6 +4018,11 @@ interface HistoryRecord {
   createdAt: number
   localFilePath: string | null
   bytesWritten: number
+  mediaKind?: "video" | "image" | "mixed"
+  mediaCount?: number
+  savedCount?: number
+  failedCount?: number
+  saveSummary?: string
 }
 
 type MediaKind = "video" | "image"
@@ -3997,12 +4066,13 @@ function buildSelectableMediaItems(result: MediaResult): SelectableMediaItem[] {
   }
 
   uniqueUrls(result.images).forEach((url, index) => {
+    const previewUrl = result.imagePreviews?.[index] || url
     items.push({
       id: `image_${index}`,
       kind: "image",
       url,
       title: `${title} · 图片 ${index + 1}`,
-      thumbnailUrl: url,
+      thumbnailUrl: previewUrl,
       index,
     })
   })
@@ -4099,7 +4169,7 @@ function HistoryRow(props: {
     const fileExists = !!item.localFilePath
     const result = await Dialog.actionSheet({
       title: item.title || "(无标题)",
-      message: `${formatDate(item.createdAt)} · ${item.bytesWritten > 0 ? formatBytes(item.bytesWritten) : '已保存到相册'}`,
+      message: `${formatDate(item.createdAt)} · ${historyMediaSummary(item)}${item.saveSummary ? `\n${item.saveSummary}` : ''}`,
       actions: [
         { label: "分享文件" },
         { label: "保存到相册" },
@@ -4176,6 +4246,7 @@ function HistoryRow(props: {
       </VStack>
       <VStack alignment="leading" spacing={5} frame={{ maxWidth: "infinity", alignment: "leading" as any }}>
         <Text font="headline" lineLimit={2}>{item.title || "(无标题)"}</Text>
+        <Text font="caption" foregroundStyle="secondaryLabel" lineLimit={1}>{historyMediaSummary(item)}</Text>
         <Text font="caption" foregroundStyle="secondaryLabel" lineLimit={1}>{item.pageURL}</Text>
         <HStack>
           <Text font="caption2" foregroundStyle="secondaryLabel">{PLATFORM_NAME[item.platform] || item.platform}</Text>
@@ -4210,7 +4281,7 @@ function HistoryPage(props: {
       >
         <Section
           header={<Text>{`下载历史 (${history.length})`}</Text>}
-          footer={<Text font="caption" foregroundStyle="secondaryLabel">点击记录可打开操作菜单（分享/保存/打开/复制/删除）；左滑可快速删除。</Text>}
+          footer={<Text font="caption" foregroundStyle="secondaryLabel">点击记录可打开操作菜单；记录会显示媒体类型、数量和保存结果，左滑可快速删除。</Text>}
         >
           {history.length === 0 ? (
             <Text foregroundStyle="secondaryLabel">还没有下载历史。可以先输入一个链接试试。</Text>
@@ -4236,6 +4307,47 @@ function HistoryPage(props: {
 
 // ─── 下载页 ──────────────────────────────────────────
 
+function ImageSelectionTile(props: {
+  item: SelectableMediaItem
+  selected: boolean
+  disabled: boolean
+  onToggle: (id: string) => void
+}) {
+  const { item, selected, disabled, onToggle } = props
+  return (
+    <Button action={() => onToggle(item.id)} disabled={disabled}>
+      <ZStack frame={{ maxWidth: "infinity", minHeight: 170, alignment: "topTrailing" as any }}>
+        <VStack
+          spacing={6}
+          padding={6}
+          frame={{ maxWidth: "infinity", minHeight: 170, alignment: "top" as any }}
+          clipShape={{ type: "rect", cornerRadius: 8 }}
+          background={{ style: selected ? "systemPink" : "tertiarySystemFill", shape: { type: "rect", cornerRadius: 8 } }}
+        >
+          <VStack
+            frame={{ maxWidth: "infinity", height: 128, alignment: "center" as any }}
+            clipShape={{ type: "rect", cornerRadius: 6 }}
+            background={{ style: "systemBackground", shape: { type: "rect", cornerRadius: 6 } }}
+          >
+            {item.thumbnailUrl ? (
+              <Image imageUrl={item.thumbnailUrl} scaleToFit={true} frame={{ width: 128, height: 128 }} />
+            ) : (
+              <Image systemName="photo.fill" foregroundStyle="secondaryLabel" frame={{ width: 26, height: 26 }} />
+            )}
+          </VStack>
+          <Text font="caption" foregroundStyle={selected ? "white" : "secondaryLabel"} lineLimit={1}>{`图片 ${item.index + 1}`}</Text>
+        </VStack>
+        <Image
+          systemName={selected ? "checkmark.circle.fill" : "circle"}
+          foregroundStyle={selected ? "white" : "secondaryLabel"}
+          frame={{ width: 24, height: 24 }}
+          padding={{ top: 8, trailing: 8 }}
+        />
+      </ZStack>
+    </Button>
+  )
+}
+
 function MediaSelectionRow(props: {
   item: SelectableMediaItem
   selected: boolean
@@ -4257,11 +4369,19 @@ function MediaSelectionRow(props: {
         />
       </Button>
       <VStack
-        frame={{ width: 50, height: 50, alignment: "center" as any }}
+        frame={{ width: 88, height: 88, alignment: "center" as any }}
         clipShape={{ type: "rect", cornerRadius: 8 }}
         background={{ style: "tertiarySystemFill", shape: { type: "rect", cornerRadius: 8 } }}
       >
-        <Image systemName={item.kind === "video" ? "play.rectangle.fill" : "photo.fill"} foregroundStyle="secondaryLabel" />
+        {item.thumbnailUrl ? (
+          <Image
+            imageUrl={item.thumbnailUrl}
+            scaleToFit
+            frame={{ width: 88, height: 88 }}
+          />
+        ) : (
+          <Image systemName={item.kind === "video" ? "play.rectangle.fill" : "photo.fill"} foregroundStyle="secondaryLabel" />
+        )}
       </VStack>
       <VStack alignment="leading" spacing={4} frame={{ maxWidth: "infinity", alignment: "leading" as any }}>
         <Text font="subheadline" fontWeight="medium" lineLimit={2}>{item.title}</Text>
@@ -4294,6 +4414,8 @@ function DownloadPage(props: {
     onToggleMedia, onSelectAll, onClearSelection, onDownloadSelected, onStopTask, dismiss,
   } = props
   const selectedCount = selectedMediaIds.length
+  const videoItems = mediaItems.filter((item) => item.kind === "video")
+  const imageItems = mediaItems.filter((item) => item.kind === "image")
 
   return (
     <NavigationStack>
@@ -4341,15 +4463,37 @@ function DownloadPage(props: {
               <Spacer />
               <Button title="清空" disabled={loading || selectedCount === 0} action={onClearSelection} />
             </HStack>
-            {mediaItems.map((item) => (
-              <MediaSelectionRow
-                key={item.id}
-                item={item}
-                selected={selectedMediaIds.includes(item.id)}
-                disabled={loading}
-                onToggle={onToggleMedia}
-              />
-            ))}
+            {videoItems.length > 0 ? (
+              <VStack spacing={8} frame={{ maxWidth: "infinity", alignment: "leading" as any }}>
+                {videoItems.map((item) => (
+                  <MediaSelectionRow
+                    key={item.id}
+                    item={item}
+                    selected={selectedMediaIds.includes(item.id)}
+                    disabled={loading}
+                    onToggle={onToggleMedia}
+                  />
+                ))}
+              </VStack>
+            ) : null}
+            {imageItems.length > 0 ? (
+              <ScrollView frame={{ maxWidth: "infinity", height: imageItems.length > 2 ? 388 : 190 }}>
+                <LazyVGrid
+                  columns={[{ size: { type: "flexible", min: 130, max: "infinity" } }, { size: { type: "flexible", min: 130, max: "infinity" } }]}
+                  spacing={10}
+                >
+                  {imageItems.map((item) => (
+                    <ImageSelectionTile
+                      key={item.id}
+                      item={item}
+                      selected={selectedMediaIds.includes(item.id)}
+                      disabled={loading}
+                      onToggle={onToggleMedia}
+                    />
+                  ))}
+                </LazyVGrid>
+              </ScrollView>
+            ) : null}
             <Button
               title={loading ? "处理中…" : `下载已选内容 (${selectedCount})`}
               disabled={loading || selectedCount === 0}
@@ -4365,7 +4509,7 @@ function DownloadPage(props: {
               <HStack spacing={10} alignment="center">
                 <VStack alignment="leading" spacing={3} frame={{ maxWidth: "infinity", alignment: "leading" as any }}>
                   <Text>{downloadProgress.stage}</Text>
-                  <Text font="caption" foregroundStyle="secondaryLabel">当前进度：{Math.round(downloadProgress.fraction * 100)}%</Text>
+                  <Text font="caption" foregroundStyle="secondaryLabel">{loading ? "当前任务运行中，可随时停止。" : status}</Text>
                 </VStack>
                 <Button role="destructive" action={onStopTask} frame={{ width: 38, height: 34 }}>
                   <Image systemName="stop.fill" foregroundStyle="systemRed" frame={{ width: 16, height: 16 }} />
@@ -4454,6 +4598,37 @@ function SettingsInfoRow(props: {
   return <Button action={props.onPress}>{content}</Button>
 }
 
+async function testPlatformCookie(platform: string, cookieValue: string): Promise<string> {
+  const trimmed = cookieValue.trim()
+  if (!trimmed) return "未配置 Cookie。"
+  if (platform === "xiaohongshu") {
+    const missing: string[] = []
+    if (!/(^|;\s*)web_session=/i.test(trimmed)) missing.push("web_session")
+    if (!/(^|;\s*)a1=/i.test(trimmed)) missing.push("a1")
+    try {
+      const resp = await fetch("https://www.xiaohongshu.com/explore", {
+        timeout: 10,
+        headers: {
+          "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/144.0.0.0 Safari/537.36",
+          "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+          "Cookie": trimmed,
+        },
+      } as any)
+      const html = await resp.text().catch(() => "")
+      const notes: string[] = []
+      notes.push(`HTTP ${resp.status}`)
+      if (missing.length) notes.push(`缺少关键字段：${missing.join(", ")}`)
+      if (/登录|login|captcha|安全验证|sec_/i.test(html)) notes.push("页面疑似要求登录或安全验证")
+      if (!missing.length && resp.ok && !/登录|login|captcha|安全验证|sec_/i.test(html)) notes.push("Cookie 状态看起来可用")
+      return notes.join("\n")
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      return `检测失败：${message}`
+    }
+  }
+  return `已配置 ${trimmed.length} 字符。该平台暂未提供在线检测，只做格式保存。`
+}
+
 function CookieSettingsRow(props: {
   platform: string
   name: string
@@ -4461,6 +4636,7 @@ function CookieSettingsRow(props: {
   cookieLen: number
   onEdit: () => void
   onClear: () => void
+  onTest: () => void
 }) {
   return (
     <HStack spacing={12} alignment="center">
@@ -4471,6 +4647,11 @@ function CookieSettingsRow(props: {
           {props.hasCookie ? `已配置 · ${props.cookieLen} 字符` : "未配置"}
         </Text>
       </VStack>
+      {props.hasCookie ? (
+        <Button action={props.onTest} frame={{ width: 34, height: 34 }}>
+          <Image systemName="checkmark.shield" foregroundStyle="systemGreen" frame={{ width: 18, height: 18 }} />
+        </Button>
+      ) : null}
       {props.hasCookie ? (
         <Button action={props.onClear} role="destructive" frame={{ width: 34, height: 34 }}>
           <Image systemName="trash" foregroundStyle="systemRed" frame={{ width: 17, height: 17 }} />
@@ -4562,6 +4743,13 @@ function SettingsPage(props: {
     await saveCookies(updated)
   }
 
+  const testCookie = async (platform: string) => {
+    const platformName = PLATFORM_NAME[platform] || platform
+    const cookieValue = (cookies as any)[platform] || ""
+    const message = await testPlatformCookie(platform, cookieValue)
+    await alert({ title: `${platformName} Cookie 检测`, message })
+  }
+
   const clearCookie = async (platform: string) => {
     const updated = { ...cookies }
     ;(updated as any)[platform] = ""
@@ -4605,6 +4793,7 @@ function SettingsPage(props: {
                 cookieLen={cookieLen}
                 onEdit={() => { void editCookie(key) }}
                 onClear={() => { void clearCookie(key) }}
+                onTest={() => { void testCookie(key) }}
               />
             )
           })}
@@ -4746,16 +4935,19 @@ function View() {
       appendLog("已从分享文本中自动提取 URL。")
     }
 
+    let detectedPlatform: string | undefined
+
     try {
       const detected = detectPlatform(url)
+      detectedPlatform = detected?.platform
       if (!detected) {
         throw new Error("未识别到支持的平台链接")
       }
       const name = PLATFORM_NAME[detected.platform] || detected.platform
 
-      setDownloadProgress({ fraction: 0.35, stage: `正在解析 ${name} 页面…` })
+      setDownloadProgress({ fraction: 0.2, stage: `检测到 ${name}，正在获取页面` })
       appendLog(`检测到平台：${name}`)
-      appendLog("正在请求页面…")
+      appendLog("正在获取页面数据…")
 
       const r = await parseDetected(detected)
       if (!isCurrentTask()) return
@@ -4764,6 +4956,7 @@ function View() {
       }
 
       const items = buildSelectableMediaItems(r)
+      setDownloadProgress({ fraction: 0.72, stage: "正在提取可下载媒体" })
       if (!items.length) {
         throw new Error("未找到可下载的媒体")
       }
@@ -4771,15 +4964,23 @@ function View() {
       setParsedResult(r)
       setMediaItems(items)
       setSelectedMediaIds(items.map((item) => item.id))
-      setDownloadProgress({ fraction: 1, stage: "解析完成" })
+      setDownloadProgress({ fraction: 1, stage: "解析完成，等待选择" })
       appendLog(`解析成功：${r.title || "(无标题)"}，找到 ${items.length} 个媒体。`)
+      if (r.images?.length && items.filter((item) => item.kind === "image").length < r.images.length) {
+        appendLog("提示：部分图片 URL 被去重或过滤，下载列表只显示最终可用项。")
+      }
+      if (r.debug?.length) {
+        for (const line of r.debug) appendLog(line)
+      }
       setStatus(`解析完成：已默认全选 ${items.length} 个媒体，可取消不需要的项目。`)
     } catch (error) {
       if (!isCurrentTask()) return
       const message = error instanceof Error ? error.message : String(error)
+      const advice = failureAdvice(message, detectedPlatform)
       appendLog(`解析失败：${message}`)
+      appendLog(`建议：${advice}`)
       setStatus(`解析失败：${message}`)
-      await alert({ title: "解析失败", message })
+      await alert({ title: "解析失败", message: `${message}\n\n建议：${advice}` })
     } finally {
       if (isCurrentTask()) setLoading(false)
     }
@@ -4818,9 +5019,12 @@ function View() {
     let downloadedBytes = 0
     let savedLocalPath: string | null = null
     let primaryVideoUrl: string | null = null
+    let savedCount = 0
+    let failedCount = 0
+    let saveSummary = ""
 
     setLoading(true)
-    setDownloadProgress({ fraction: 0.15, stage: "准备下载已选内容" })
+    setDownloadProgress({ fraction: 0.1, stage: "准备下载，正在整理已选内容" })
     setStatus(`正在下载 ${selectedItems.length} 个已选媒体…`)
     appendLog(`开始下载已选内容：${selectedItems.length} 个。`)
 
@@ -4829,7 +5033,7 @@ function View() {
       const imageItems = selectedItems.filter((item) => item.kind === "image")
 
       if (videoItem) {
-        setDownloadProgress({ fraction: 0.35, stage: "正在下载视频…" })
+        setDownloadProgress({ fraction: 0.3, stage: "正在下载视频文件" })
         appendLog(`开始下载视频：${videoItem.url}`)
         primaryVideoUrl = videoItem.url
         const result = await saveVideoToPhotos(videoItem.url, parsedResult.title, parsedResult.link, platform, parsedResult.videoId, parsedResult.videoUrls, parsedResult.videoUri)
@@ -4837,19 +5041,28 @@ function View() {
         appendLog(result.msg)
         downloadedBytes += result.bytes
         savedLocalPath = result.path || null
+        savedCount += 1
+        saveSummary = result.msg
       }
 
       if (imageItems.length) {
-        setDownloadProgress({ fraction: videoItem ? 0.68 : 0.45, stage: `正在保存 ${imageItems.length} 张图片…` })
+        setDownloadProgress({ fraction: videoItem ? 0.65 : 0.35, stage: `正在保存图片到相册（${imageItems.length} 张）` })
         appendLog(`开始保存 ${imageItems.length} 张图片…`)
         const imageResult = await saveImagesToPhotos(imageItems.map((item) => item.url), parsedResult.title, parsedResult.link, platform)
         if (!isCurrentTask()) return
         appendLog(imageResult.msg)
         downloadedBytes += imageResult.bytes
+        savedCount += imageResult.saved
+        failedCount += imageResult.failed
+        saveSummary = saveSummary ? `${saveSummary}；${imageResult.msg}` : imageResult.msg
+        if (imageResult.failed > 0) appendLog(`提示：有 ${imageResult.failed} 张图片保存失败，通常是个别 CDN 链接临时不可访问。`)
       }
 
       if (!isCurrentTask()) return
       setDownloadProgress({ fraction: 0.95, stage: "正在写入历史记录" })
+      const imageCount = imageItems.length
+      const mediaKind: "video" | "image" | "mixed" = videoItem && imageCount ? "mixed" : videoItem ? "video" : "image"
+      const mediaCount = selectedItems.length
       await insertHistory({
         platform,
         icon,
@@ -4860,18 +5073,25 @@ function View() {
         createdAt: Date.now(),
         localFilePath: savedLocalPath,
         bytesWritten: downloadedBytes,
+        mediaKind,
+        mediaCount,
+        savedCount,
+        failedCount,
+        saveSummary,
       })
       await refreshHistory()
       appendLog("历史记录已写入。")
 
       setDownloadProgress({ fraction: 1, stage: "全部完成" })
-      setStatus(`下载成功：${selectedItems.length} 个媒体（${name}）`)
+      setStatus(failedCount > 0 ? `下载完成：${savedCount}/${selectedItems.length} 个媒体成功（${name}）` : `下载成功：${selectedItems.length} 个媒体（${name}）`)
     } catch (error) {
       if (!isCurrentTask()) return
       const message = error instanceof Error ? error.message : String(error)
+      const advice = failureAdvice(message, platform)
       appendLog(`下载失败：${message}`)
+      appendLog(`建议：${advice}`)
       setStatus(`下载失败：${message}`)
-      await alert({ title: "下载失败", message })
+      await alert({ title: "下载失败", message: `${message}\n\n建议：${advice}` })
     } finally {
       if (isCurrentTask()) setLoading(false)
     }
