@@ -3,7 +3,7 @@ import type { TelegramAudience, ThemeMode, WidgetLayout } from "../types"
 import { resolveTheme, TELEGRAM_BLUE, type ThemeColors } from "../theme"
 import { formatAudienceCompact, formatUpdateTime } from "../format"
 
-export const REFRESH_URL = "scripting://run?action=refresh"
+export const SETTINGS_URL = "scripting://run"
 
 type WidgetViewProps = {
   data: TelegramAudience | null
@@ -80,7 +80,7 @@ function EmptyState({
       padding={14}
       frame={{ maxWidth: Infinity, maxHeight: Infinity, alignment: "center" }}
       background={colors.background}
-      widgetURL={REFRESH_URL}
+      widgetURL={SETTINGS_URL}
     >
       <Image systemName="paperplane.circle.fill" foregroundStyle={colors.accent} font={34} />
       <Text font={15} fontWeight="semibold" foregroundStyle={colors.text}>
@@ -112,7 +112,7 @@ function ClassicLayout({
       padding={{ horizontal: 15, top: 14, bottom: 12 }}
       frame={{ maxWidth: Infinity, maxHeight: Infinity, alignment: "topLeading" }}
       background={colors.background}
-      widgetURL={REFRESH_URL}
+      widgetURL={SETTINGS_URL}
     >
       <HStack frame={{ maxWidth: Infinity }} alignment="center">
         <HStack spacing={6} alignment="center">
@@ -182,7 +182,7 @@ function SpotlightLayout({
       padding={{ horizontal: 12, top: 12, bottom: 12 }}
       frame={{ maxWidth: Infinity, maxHeight: Infinity, alignment: "center" }}
       background={colors.background}
-      widgetURL={REFRESH_URL}
+      widgetURL={SETTINGS_URL}
     >
       <HStack frame={{ maxWidth: Infinity }} alignment="center">
         <HStack spacing={4} alignment="center">
@@ -255,7 +255,7 @@ function MetricLayout({
       padding={{ horizontal: 14, top: 12, bottom: 12 }}
       frame={{ maxWidth: Infinity, maxHeight: Infinity, alignment: "topLeading" }}
       background={colors.background}
-      widgetURL={REFRESH_URL}
+      widgetURL={SETTINGS_URL}
     >
       <HStack frame={{ maxWidth: Infinity }} alignment="center">
         <Text font={11} fontWeight="semibold" foregroundStyle={colors.subText} lineLimit={1}>
@@ -322,7 +322,7 @@ function CardLayout({
       padding={12}
       frame={{ maxWidth: Infinity, maxHeight: Infinity, alignment: "topLeading" }}
       background={colors.background}
-      widgetURL={REFRESH_URL}
+      widgetURL={SETTINGS_URL}
     >
       <HStack frame={{ maxWidth: Infinity }} alignment="center">
         <Spacer />

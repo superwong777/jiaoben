@@ -67,10 +67,15 @@ export function SettingsView() {
       setStatus({ type: "success", message: "保存成功，小组件已刷新" })
       Widget.reloadAll()
     } catch (error) {
+      const cached = getCache()
+      setResult(cached)
       setStatus({
         type: "error",
-        message: error instanceof Error ? error.message : String(error),
+        message:
+          (error instanceof Error ? error.message : String(error)) +
+          (cached ? "，已显示缓存" : "，暂无可用缓存"),
       })
+      if (cached) Widget.reloadAll()
     } finally {
       setIsLoading(false)
     }

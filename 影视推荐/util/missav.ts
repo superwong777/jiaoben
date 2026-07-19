@@ -1,3 +1,4 @@
+import { DEFAULT_FETCH_TIMEOUT_MS } from "./http";
 import { pickDailyItems } from "./daily";
 import type { TrendingItem } from "./settings";
 
@@ -8,8 +9,14 @@ export async function getMissAVTrending(length: number): Promise<TrendingItem[]>
     let wv: any = null;
     try {
         wv = new WebViewController();
-        await wv.loadURL("https://missav.ai");
-        await wv.waitForLoad();
+        await withTimeout(
+            (async () => {
+                await wv.loadURL("https://missav.ai");
+                await wv.waitForLoad();
+            })(),
+            DEFAULT_FETCH_TIMEOUT_MS,
+            "MissAV 页面加载"
+        );
 
         const result = await wv.evaluateJavaScript(`
             const divs = document.querySelectorAll('div.relative.aspect-w-16.aspect-h-9.rounded.overflow-hidden.shadow-lg');
@@ -42,6 +49,24 @@ export async function getMissAVTrending(length: number): Promise<TrendingItem[]>
             wv?.destroy?.();
         } catch {
             // ignore cleanup errors
+        }
+    }
+}
+
+async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+        return await Promise.race([
+            promise,
+            new Promise<T>((_, reject) => {
+                timer = setTimeout(() => {
+                    reject(new Error(`${label}超时: ${Math.round(timeoutMs / 1000)}秒未响应`));
+                }, timeoutMs);
+            }),
+        ]);
+    } finally {
+        if (timer) {
+            clearTimeout(timer);
         }
     }
 }

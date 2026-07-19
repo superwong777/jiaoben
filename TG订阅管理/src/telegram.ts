@@ -110,7 +110,7 @@ export function normalizeTelegramSource(input: string): { source: string; url: s
 export async function fetchTelegramAudience(input: string): Promise<TelegramAudience> {
   const normalized = normalizeTelegramSource(input)
   const response = await fetch(normalized.url, {
-    timeout: 15,
+    timeout: 10,
     headers: {
       Accept: "text/html,application/xhtml+xml",
       "User-Agent":

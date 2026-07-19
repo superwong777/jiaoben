@@ -1,0 +1,44 @@
+{
+  "contributors" : [
+
+  ],
+  "name" : "快捷下载",
+  "description" : null,
+  "author" : {
+    "email" : null,
+    "homepage" : null,
+    "name" : "7452323"
+  },
+  "localizedDescriptions" : {
+    "en" : "",
+    "es" : "",
+    "ja" : "",
+    "pt" : "",
+    "it" : "",
+    "zh" : "",
+    "de" : "",
+    "fr" : "",
+    "ru" : ""
+  },
+  "intentInputTypes" : [
+
+  ],
+  "permissions" : null,
+  "icon" : "stamp.fill",
+  "entry" : "index.tsx",
+  "version" : "1.0.0",
+  "iconImage" : null,
+  "runInApp" : false,
+  "color" : "rgba(233, 123, 199,1)",
+  "localizedNames" : {
+    "zh" : "",
+    "ja" : "",
+    "es" : "",
+    "en" : "",
+    "ru" : "",
+    "pt" : "",
+    "fr" : "",
+    "de" : "",
+    "it" : ""
+  }
+}

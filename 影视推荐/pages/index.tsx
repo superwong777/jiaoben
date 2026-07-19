@@ -141,7 +141,7 @@ export function View() {
 
                 {settingValue.source === "Emby" ? (
                     <Section
-                        title="配置项目"
+                        header={<Text>配置项目</Text>}
                         footer={<Text>地址与 API Key 会实时写入当前设置，点右上角「保存」后生效。</Text>}
                     >
                         <EmbyConfig

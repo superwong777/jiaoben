@@ -1,4 +1,4 @@
-import { fetch } from "scripting";
+import { fetchJson } from "../http";
 
 const base_url = "https://api.themoviedb.org/3";
 // 优先读 Storage；未配置时回退内置 key（建议用户自行写入 tmdb_token）
@@ -23,11 +23,7 @@ export class TMDB {
 
     private async request(method: string, path: string) {
         const url = `${base_url}${path}`;
-        const res = await fetch(url, { method, headers: this.headers });
-        if (!res.ok) {
-            throw new Error(`TMDB API error: ${res.status}`);
-        }
-        return await res.json();
+        return await fetchJson(url, { method, headers: this.headers }, "TMDB");
     }
 
     async getMovieImages(movieId: number, language = "zh") {
