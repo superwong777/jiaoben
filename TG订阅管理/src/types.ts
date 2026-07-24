@@ -31,8 +31,10 @@ export type TelegramAudience = {
   audienceText: string
   /** 受众类型：订阅者 / 成员 */
   audienceType: AudienceType
-  /** 头像 URL（可选） */
+  /** 头像远程 URL（可选） */
   avatarURL?: string
+  /** 头像本地文件路径（App Group，供 Widget 离线展示） */
+  avatarPath?: string
   /** 简介（可选） */
   description?: string
   /** 抓取时间戳 */

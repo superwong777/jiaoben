@@ -1,4 +1,5 @@
 import type { TelegramAudience, ThemeMode, WidgetLayout } from "./types"
+import { clearAvatarCache } from "./avatar"
 import { DEFAULT_LAYOUT, isWidgetLayout } from "./layout"
 
 // ==========================================
@@ -17,6 +18,8 @@ const CACHE_KEY = "tg_audience_cache"
 const THEME_KEY = "tg_theme_mode"
 /** Storage：排版方案 */
 const LAYOUT_KEY = "tg_widget_layout"
+/** Storage：最近一次刷新失败原因（Widget 警告态） */
+const LAST_ERROR_KEY = "tg_last_error"
 
 /** 默认缓存有效期：30 分钟 */
 export const CACHE_TTL_MS = 30 * 60 * 1000
@@ -52,10 +55,37 @@ export function setCache(data: TelegramAudience): void {
   Storage.set(CACHE_KEY, data)
 }
 
-/** 清除受众缓存 */
+/** 清除受众缓存、本地头像与最近错误 */
 export function clearCache(): void {
   if (Storage.contains(CACHE_KEY)) {
     Storage.remove(CACHE_KEY)
+  }
+  clearLastError()
+  clearAvatarCache()
+}
+
+// --- 最近刷新错误（Storage）---
+
+/** 读取最近一次刷新失败原因；无则 null */
+export function getLastError(): string | null {
+  const value = Storage.get<string>(LAST_ERROR_KEY)
+  return value?.trim() ? value : null
+}
+
+/** 写入最近一次刷新失败原因 */
+export function setLastError(message: string): void {
+  const text = message.trim()
+  if (!text) {
+    clearLastError()
+    return
+  }
+  Storage.set(LAST_ERROR_KEY, text)
+}
+
+/** 清除最近一次刷新失败原因 */
+export function clearLastError(): void {
+  if (Storage.contains(LAST_ERROR_KEY)) {
+    Storage.remove(LAST_ERROR_KEY)
   }
 }
 

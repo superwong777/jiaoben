@@ -1,44 +1,45 @@
 {
+  "runInApp" : false,
+  "name" : "快捷下载",
+  "icon" : "puzzlepiece.fill",
+  "color" : "rgba(128, 138, 148,1)",
+  "entry" : "index.tsx",
+  "iconImage" : null,
   "contributors" : [
 
   ],
-  "name" : "快捷下载",
+  "intentInputTypes" : [
+
+  ],
+  "localizedNames" : {
+    "es" : "",
+    "de" : "",
+    "fr" : "",
+    "pt" : "",
+    "zh" : "",
+    "ru" : "",
+    "it" : "",
+    "ja" : "",
+    "en" : ""
+  },
   "description" : null,
+  "remoteResource" : null,
+  "version" : "1.0.0",
+  "permissions" : null,
   "author" : {
     "email" : null,
     "homepage" : null,
     "name" : "7452323"
   },
   "localizedDescriptions" : {
-    "en" : "",
-    "es" : "",
-    "ja" : "",
     "pt" : "",
-    "it" : "",
-    "zh" : "",
+    "en" : "",
     "de" : "",
     "fr" : "",
-    "ru" : ""
-  },
-  "intentInputTypes" : [
-
-  ],
-  "permissions" : null,
-  "icon" : "stamp.fill",
-  "entry" : "index.tsx",
-  "version" : "1.0.0",
-  "iconImage" : null,
-  "runInApp" : false,
-  "color" : "rgba(233, 123, 199,1)",
-  "localizedNames" : {
-    "zh" : "",
     "ja" : "",
-    "es" : "",
-    "en" : "",
     "ru" : "",
-    "pt" : "",
-    "fr" : "",
-    "de" : "",
+    "es" : "",
+    "zh" : "",
     "it" : ""
   }
 }

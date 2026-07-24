@@ -16,12 +16,10 @@ import {
   getLayout,
   getSource,
   getTheme,
-  setCache,
   setLayout,
-  setSource,
   setTheme,
 } from "../../store"
-import { fetchTelegramAudience } from "../../telegram"
+import { refreshAudience } from "../../refresh"
 import { ThemePicker } from "./ThemePicker"
 import { LayoutPicker } from "./LayoutPicker"
 import { StatusSection } from "./StatusSection"
@@ -59,13 +57,28 @@ export function SettingsView() {
     setIsLoading(true)
     setStatus({ type: "loading", message: "正在查询 Telegram..." })
     try {
-      const data = await fetchTelegramAudience(source)
-      setSource(data.source)
-      setCache(data)
-      setSourceInput(data.source)
-      setResult(data)
+      const refreshed = await refreshAudience({
+        force: true,
+        reloadWidget: true,
+        sourceOverride: source,
+      })
+
+      setResult(refreshed.data)
+      if (refreshed.data) {
+        setSourceInput(refreshed.data.source)
+      }
+
+      if (refreshed.error) {
+        setStatus({
+          type: "error",
+          message:
+            refreshed.error +
+            (refreshed.data ? "，已显示缓存" : "，暂无可用缓存"),
+        })
+        return
+      }
+
       setStatus({ type: "success", message: "保存成功，小组件已刷新" })
-      Widget.reloadAll()
     } catch (error) {
       const cached = getCache()
       setResult(cached)

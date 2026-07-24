@@ -1,6 +1,8 @@
 import { Script, Path } from "scripting";
 import { fetchBytes, fetchJson } from "./http";
 import { hashString, pickDailyItems } from "./daily";
+import { collectCachedImagePaths } from "./cache";
+import { pruneImageDir } from "./localImage";
 import type { TrendingItem } from "./settings";
 
 export async function getJavBusTrending(length: number): Promise<TrendingItem[]> {
@@ -17,40 +19,55 @@ export async function getJavBusTrending(length: number): Promise<TrendingItem[]>
         }
 
         console.log(`成功获取数据，条数: ${result.length}`);
-        // 日更只需要 length 条，不必再扩到整个 pool 再 slice
-        const daily = pickDailyItems(result, length, "javbus");
+
+        // 多取缓冲：今天可能抽到 javbus.org 等 401 图源，失败后继续往后补
+        const candidateCount = Math.min(Math.max(length * 3, length + 6), result.length);
+        const daily = pickDailyItems(result, candidateCount, "javbus");
         const rootPath = await ensureJavBusDir();
 
-        const tasks = daily.map(async (item: any, index: number) => {
-            try {
-                let cleanSrc = item.src || "";
-                if (cleanSrc.includes("javbus.com//pics")) {
-                    cleanSrc = cleanSrc.replace("javbus.com//pics", "javbus.com/pics");
-                }
-
-                const path = await setJavBusImage(cleanSrc, item.link, rootPath);
-                if (path) {
-                    return {
-                        openUrl: item.link,
-                        imagePath: path,
-                    } as TrendingItem;
-                }
-                return {
-                    openUrl: item.link,
-                    imageUrl: cleanSrc,
-                } as TrendingItem;
-            } catch (singleErr) {
-                console.warn(`第 ${index} 张图下载异常，降级直连网络地址:`, singleErr);
-                return {
-                    openUrl: item.link,
-                    imageUrl: item.src,
-                } as TrendingItem;
+        const items: TrendingItem[] = [];
+        for (let index = 0; index < daily.length && items.length < length; index++) {
+            const item = daily[index];
+            const openUrl = typeof item?.link === "string" ? item.link.trim() : "";
+            let cleanSrc = typeof item?.src === "string" ? item.src.trim() : "";
+            if (!openUrl || !cleanSrc) {
+                console.warn(`第 ${index} 条缺少 link/src，跳过`);
+                continue;
             }
-        });
 
-        const finalResult = await Promise.all(tasks);
-        console.log("JavBus 数据处理完成:", JSON.stringify(finalResult));
-        return finalResult.filter((item) => Boolean(item.openUrl && (item.imagePath || item.imageUrl)));
+            if (cleanSrc.includes("javbus.com//pics")) {
+                cleanSrc = cleanSrc.replace("javbus.com//pics", "javbus.com/pics");
+            }
+
+            try {
+                const path = await setJavBusImage(cleanSrc, openUrl, rootPath);
+                if (path) {
+                    items.push({
+                        openUrl,
+                        imagePath: path,
+                    });
+                    continue;
+                }
+
+                // 本地下载失败（常见 401/防盗链）时不要塞失效远程图，直接换下一条
+                console.warn(`第 ${index} 张图下载失败，换下一条候选: ${cleanSrc}`);
+            } catch (singleErr) {
+                console.warn(`第 ${index} 张图处理异常，换下一条候选:`, singleErr);
+            }
+        }
+
+        console.log(`JavBus 数据处理完成: ${items.length}/${length}`);
+
+        // 只保留本轮 + 缓存仍引用的本地图，避免 image/javbus 膨胀
+        if (items.length > 0) {
+            const keep = [
+                ...items.map((item) => item.imagePath || ""),
+                ...collectCachedImagePaths("JavBus"),
+            ];
+            await pruneImageDir(rootPath, keep);
+        }
+
+        return items;
     } catch (e) {
         console.error("getJavBusTrending 发生致命错误:", e);
         return [];

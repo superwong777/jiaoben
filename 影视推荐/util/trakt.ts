@@ -22,8 +22,8 @@ export async function getTraktTrending(length: number): Promise<TrendingItem[]> 
             return [];
         }
 
-        // 只多取少量缓冲，避免串行/过多 TMDB 详情请求
-        const candidateCount = Math.min(Math.max(length + 2, length), result.length);
+        // 多取缓冲，避免个别 TMDB 海报失败后不足目标数量
+        const candidateCount = Math.min(Math.max(length * 2, length + 4), result.length);
         const dailyRaw = pickDailyItems(result, candidateCount, "trakt");
         const tmdb = TMDB.getInstance();
 

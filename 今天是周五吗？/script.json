@@ -1,0 +1,27 @@
+{
+  "runInApp" : true,
+  "remoteResource" : null,
+  "permissions" : null,
+  "color" : "rgba(174, 109, 216,1)",
+  "version" : "1.0.0",
+  "icon" : "calendar",
+  "name" : "今天是周五吗？",
+  "iconImage" : null,
+  "localizedNames" : {
+    "zh" : "今天是周五吗？",
+    "zh-Hans" : "今天是周五吗？"
+  },
+  "author" : null,
+  "description" : "A minimal Apple-style page that answers whether today is Friday.",
+  "entry" : "index.tsx",
+  "intentInputTypes" : [
+
+  ],
+  "contributors" : [
+
+  ],
+  "localizedDescriptions" : {
+    "zh-Hans" : "自动判断今天是否为周五，以 Apple 风格黑白界面呈现。",
+    "zh" : "自动判断今天是否为周五，以 Apple 风格黑白界面呈现。"
+  }
+}

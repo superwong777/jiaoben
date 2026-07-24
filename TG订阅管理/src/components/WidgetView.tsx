@@ -1,5 +1,6 @@
 import { HStack, Image, Spacer, Text, VStack, type Color, type VirtualNode } from "scripting"
 import type { TelegramAudience, ThemeMode, WidgetLayout } from "../types"
+import { isLocalAvatarValid } from "../avatar"
 import { resolveTheme, TELEGRAM_BLUE, type ThemeColors } from "../theme"
 import { formatAudienceCompact, formatUpdateTime } from "../format"
 
@@ -28,34 +29,13 @@ function RefreshIcon() {
   )
 }
 
-function Avatar({
-  url,
+function AvatarPlaceholder({
   size,
   accent,
 }: {
-  url?: string
   size: number
   accent: Color
 }) {
-  if (url) {
-    return (
-      <Image
-        imageUrl={url}
-        resizable
-        scaleToFill
-        frame={{ width: size, height: size }}
-        clipShape="circle"
-        placeholder={
-          <Image
-            systemName="paperplane.circle.fill"
-            foregroundStyle={accent}
-            font={size}
-            frame={{ width: size, height: size }}
-          />
-        }
-      />
-    )
-  }
   return (
     <Image
       systemName="paperplane.circle.fill"
@@ -64,6 +44,46 @@ function Avatar({
       frame={{ width: size, height: size }}
     />
   )
+}
+
+function Avatar({
+  path,
+  url,
+  size,
+  accent,
+}: {
+  path?: string
+  url?: string
+  size: number
+  accent: Color
+}) {
+  // Widget 优先读本地文件；本地路径失效时回退远程 URL，避免空白头像
+  if (isLocalAvatarValid(path)) {
+    return (
+      <Image
+        filePath={path}
+        resizable
+        scaleToFill
+        frame={{ width: size, height: size }}
+        clipShape="circle"
+      />
+    )
+  }
+
+  if (url) {
+    return (
+      <Image
+        imageUrl={url}
+        resizable
+        scaleToFill
+        frame={{ width: size, height: size }}
+        clipShape="circle"
+        placeholder={<AvatarPlaceholder size={size} accent={accent} />}
+      />
+    )
+  }
+
+  return <AvatarPlaceholder size={size} accent={accent} />
 }
 
 function EmptyState({
@@ -116,7 +136,7 @@ function ClassicLayout({
     >
       <HStack frame={{ maxWidth: Infinity }} alignment="center">
         <HStack spacing={6} alignment="center">
-          <Avatar url={data.avatarURL} size={22} accent={colors.accent} />
+          <Avatar path={data.avatarPath} url={data.avatarURL} size={22} accent={colors.accent} />
           <Text font={12} fontWeight="bold" lineLimit={1} foregroundStyle={colors.text}>
             {data.title}
           </Text>
@@ -206,7 +226,7 @@ function SpotlightLayout({
 
       <Spacer />
 
-      <Avatar url={data.avatarURL} size={48} accent={colors.accent} />
+      <Avatar path={data.avatarPath} url={data.avatarURL} size={48} accent={colors.accent} />
 
       <Text
         font={30}
@@ -337,7 +357,7 @@ function CardLayout({
       <Spacer />
 
       <HStack spacing={10} alignment="center" frame={{ maxWidth: Infinity }}>
-        <Avatar url={data.avatarURL} size={52} accent={colors.accent} />
+        <Avatar path={data.avatarPath} url={data.avatarURL} size={52} accent={colors.accent} />
         <VStack alignment="leading" spacing={2} frame={{ maxWidth: Infinity, alignment: "leading" }}>
           <Text font={12} fontWeight="bold" lineLimit={2} foregroundStyle={colors.text}>
             {data.title}

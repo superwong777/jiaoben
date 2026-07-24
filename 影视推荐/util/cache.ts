@@ -57,7 +57,13 @@ function writeBucket(bucket: CacheBucket): void {
 export function getCachedTrending(source: string, length: number): TrendingItem[] | null {
     const bucket = readBucket();
     const items = bucket.entries[cacheKey(source, length)];
-    if (!Array.isArray(items) || items.length === 0) {
+    // 不足目标数量时不视为完整命中，允许当天继续补齐
+    if (!Array.isArray(items) || items.length === 0 || items.length < length) {
+        return null;
+    }
+    // 豆瓣/JavBus：必须有本地文件且磁盘上真实存在
+    if (!areItemsUsable(source, items)) {
+        console.warn(`[cache invalid] ${source} x${length} 本地海报不可用，重新取数`);
         return null;
     }
     // 返回浅拷贝，避免调用方误改缓存
@@ -67,10 +73,18 @@ export function getCachedTrending(source: string, length: number): TrendingItem[
 export function getFallbackTrending(source: string, length: number): TrendingItem[] | null {
     const bucket = readBucket();
     const entry = bucket.latest[cacheKey(source, length)];
-    if (!entry || entry.day === bucket.day || !Array.isArray(entry.items) || entry.items.length === 0) {
+    if (
+        !entry ||
+        entry.day === bucket.day ||
+        !Array.isArray(entry.items) ||
+        entry.items.length === 0 ||
+        !areItemsUsable(source, entry.items)
+    ) {
         return null;
     }
-    console.warn(`[cache fallback] ${source} x${length} 使用 ${entry.day} 的缓存`);
+    console.warn(
+        `[cache fallback] ${source} x${length} 使用 ${entry.day} 的缓存 (${entry.items.length} 条)`
+    );
     return cloneItems(entry.items);
 }
 
@@ -80,11 +94,20 @@ export function setCachedTrending(source: string, length: number, items: Trendin
     }
     const bucket = readBucket();
     const key = cacheKey(source, length);
+    const existing = bucket.entries[key];
+    // 不用不完整结果覆盖更完整的当天缓存
+    if (Array.isArray(existing) && existing.length > items.length) {
+        return;
+    }
     bucket.entries[key] = cloneItems(items);
-    bucket.latest[key] = {
-        day: bucket.day,
-        items: cloneItems(items),
-    };
+
+    const latest = bucket.latest[key];
+    if (!latest || latest.day !== bucket.day || latest.items.length <= items.length) {
+        bucket.latest[key] = {
+            day: bucket.day,
+            items: cloneItems(items),
+        };
+    }
     writeBucket(bucket);
 }
 
@@ -104,28 +127,99 @@ export async function withDailyCache(
     try {
         const items = await fetcher();
         if (items.length > 0) {
+            // 完整结果写入日缓存；不足目标数量也先落盘，但下次仍会尝试补齐
             setCachedTrending(source, length, items);
+            if (items.length < length) {
+                console.warn(
+                    `[cache partial] ${source} x${length} 仅拿到 ${items.length} 条，下次刷新会继续补齐`
+                );
+            }
             return items;
         }
 
-        const fallback = getFallbackTrending(source, length);
-        if (fallback) {
-            return fallback;
-        }
-        return [];
+        return pickBestFallback(source, length);
     } catch (error) {
         console.error(`[cache refresh failed] ${source} x${length}:`, error);
-        const fallback = getFallbackTrending(source, length);
-        if (fallback) {
-            return fallback;
-        }
+        return pickBestFallback(source, length);
+    }
+}
+
+function pickBestFallback(source: string, length: number): TrendingItem[] {
+    const bucket = readBucket();
+    const key = cacheKey(source, length);
+    const sameDay = bucket.entries[key];
+    const latest = bucket.latest[key];
+
+    // 优先使用条数更接近目标的结果，避免“空结果”把半成品覆盖掉
+    const candidates: { label: string; items: TrendingItem[] }[] = [];
+    if (Array.isArray(sameDay) && sameDay.length > 0 && areItemsUsable(source, sameDay)) {
+        candidates.push({ label: `当天不完整缓存 ${sameDay.length} 条`, items: sameDay });
+    }
+    if (
+        latest &&
+        Array.isArray(latest.items) &&
+        latest.items.length > 0 &&
+        latest.day !== bucket.day &&
+        areItemsUsable(source, latest.items)
+    ) {
+        candidates.push({
+            label: `${latest.day} 的缓存 ${latest.items.length} 条`,
+            items: latest.items,
+        });
+    }
+
+    if (candidates.length === 0) {
         return [];
     }
+
+    candidates.sort((a, b) => {
+        const da = Math.abs(a.items.length - length) - Math.abs(b.items.length - length);
+        if (da !== 0) return da;
+        return b.items.length - a.items.length;
+    });
+
+    const best = candidates[0];
+    console.warn(`[cache fallback] ${source} x${length} 使用 ${best.label}`);
+    return cloneItems(best.items);
 }
 
 /** 配置变更后如需强制刷新，可调用 */
 export function clearTrendingCache(): void {
     Storage.remove(CACHE_KEY);
+}
+
+/**
+ * 收集缓存中仍引用的本地海报路径（entries + latest）。
+ * 清理目录时并入 keep 列表，避免小尺寸刷新删掉中尺寸还在用的图。
+ */
+export function collectCachedImagePaths(...sources: string[]): string[] {
+    if (sources.length === 0) {
+        return [];
+    }
+    const allowed = new Set(sources.map((s) => s.split("::")[0]));
+    const bucket = readBucket();
+    const paths: string[] = [];
+
+    const visit = (items: TrendingItem[] | undefined) => {
+        if (!Array.isArray(items)) return;
+        for (const item of items) {
+            if (item?.imagePath) {
+                paths.push(item.imagePath);
+            }
+        }
+    };
+
+    for (const [key, items] of Object.entries(bucket.entries)) {
+        if (allowed.has(key.split("::")[0])) {
+            visit(items);
+        }
+    }
+    for (const [key, entry] of Object.entries(bucket.latest)) {
+        if (allowed.has(key.split("::")[0])) {
+            visit(entry?.items);
+        }
+    }
+    return paths;
 }
 
 function normalizeEntries(entries: Record<string, TrendingItem[]> | undefined): Record<string, TrendingItem[]> {
@@ -161,4 +255,26 @@ function normalizeLatest(latest: Record<string, CacheEntry> | undefined): Record
 
 function cloneItems(items: TrendingItem[]): TrendingItem[] {
     return items.map((item) => ({ ...item }));
+}
+
+/**
+ * 本地优先源（豆瓣/JavBus）必须有 imagePath，且文件真实存在。
+ * 旧缓存只有远程 imageUrl，或本地文件被删，均视为不可用。
+ */
+function areItemsUsable(source: string, items: TrendingItem[]): boolean {
+    const normalized = (source || "").split("::")[0];
+    if (normalized !== "豆瓣" && normalized !== "JavBus") {
+        return true;
+    }
+    return items.every((item) => {
+        const path = item?.imagePath;
+        if (!path) {
+            return false;
+        }
+        try {
+            return FileManager.existsSync(path);
+        } catch {
+            return false;
+        }
+    });
 }

@@ -9,6 +9,7 @@ import {
     Navigation,
     TextField,
     NavigationStack,
+    Widget,
 } from "scripting";
 import {
     SOURCES_ALL,
@@ -19,19 +20,56 @@ import {
     type Settings,
     type ThemeMode,
 } from "../util/settings";
+import { clearTrendingCache } from "../util/cache";
 
 export function View() {
     const dismiss = Navigation.useDismiss();
     const [settingValue, setSettingValue] = useState<Settings>(getSettings());
+    const [refreshing, setRefreshing] = useState(false);
+    const [toastMessage, setToastMessage] = useState("");
+    const [showToast, setShowToast] = useState(false);
 
     const update = (patch: Partial<Settings>) => {
         setSettingValue({ ...settingValue, ...patch });
+    };
+
+    const notify = (message: string) => {
+        setToastMessage(message);
+        setShowToast(true);
+    };
+
+    const forceRefresh = () => {
+        if (refreshing) {
+            return;
+        }
+        setRefreshing(true);
+        try {
+            clearTrendingCache();
+            // 允许轮播按当前逻辑重新锚定（不强制跳源）
+            const next = { ...settingValue, carouselDay: "" };
+            setSettingValue(next);
+            setSettings(next);
+            Widget.reloadAll();
+            notify("今日缓存已清空，小组件将重新拉取海报");
+        } catch (err) {
+            console.error("强制刷新失败:", err);
+            notify(`刷新失败: ${String((err as any)?.message || err)}`);
+        } finally {
+            setRefreshing(false);
+        }
     };
 
     return (
         <NavigationStack>
             <List
                 navigationTitle={"设置"}
+                toast={{
+                    message: toastMessage,
+                    isPresented: showToast,
+                    onChanged: (presented: boolean) => setShowToast(presented),
+                    duration: 2.5,
+                    position: "bottom",
+                }}
                 toolbar={{
                     topBarTrailing: [
                         <Button
@@ -78,7 +116,7 @@ export function View() {
                     header={<Text>功能</Text>}
                     footer={
                         <Text>
-                            轮播开启后，小组件每次刷新会切换到来源列表中的下一个可用源。海报会按「本地日期」每天更换一组，同一天保持稳定。
+                            轮播开启后，小组件按「本地日期」每天切换到来源列表中的下一个可用源；同一天内多次刷新不会跳源。海报本身也按本地日期每天更换一组。
                         </Text>
                     }
                 >
@@ -100,6 +138,22 @@ export function View() {
                                 update({ isAdult: val });
                             }
                         }}
+                    />
+                </Section>
+
+                <Section
+                    header={<Text>维护</Text>}
+                    footer={
+                        <Text>
+                            强制刷新会清空今日海报缓存并请求系统重绘所有 Scripting 小组件；网络正常时会重新下载一组图。
+                        </Text>
+                    }
+                >
+                    <Button
+                        title={refreshing ? "刷新中…" : "强制刷新海报"}
+                        role="destructive"
+                        disabled={refreshing}
+                        action={forceRefresh}
                     />
                 </Section>
 

@@ -1,5 +1,5 @@
 import { Button, Image, Widget } from "scripting"
-import { getCache, getLayout, getTheme } from "./src/store"
+import { getCache, getLastError, getLayout, getTheme } from "./src/store"
 import { TELEGRAM_BLUE } from "./src/theme"
 import { WidgetView } from "./src/components/WidgetView"
 import { RefreshAudienceIntent } from "./app_intents"
@@ -13,10 +13,13 @@ async function present() {
   const theme = getTheme()
   const layout = getLayout()
   const data = getCache()
+  // 最近一次手动刷新失败时展示警告态；成功刷新后会由 refresh 清掉
+  const error = getLastError() ?? undefined
 
   Widget.present(
     <WidgetView
       data={data}
+      error={error}
       theme={theme}
       layout={layout}
       refreshButton={

@@ -2,6 +2,7 @@
 // 统一设置读写与来源解析，避免 pages 模块 import 时产生副作用。
 
 import type { DynamicShapeStyle, ShapeStyle } from "scripting";
+import { getLocalDayKey } from "./daily";
 
 export type ThemeMode = "auto" | "light" | "dark";
 
@@ -13,6 +14,8 @@ export type EmbyData = {
 export type Settings = {
     source: string;
     current: number;
+    /** 轮播最近一次推进的本地日期 YYYY-MM-DD；同一天内不重复切源 */
+    carouselDay: string;
     isCarousel: boolean;
     isAdult: boolean;
     themeMode: ThemeMode;
@@ -40,6 +43,7 @@ export const DEFAULT_SOURCE = "豆瓣";
 const DEFAULT_SETTINGS: Settings = {
     source: DEFAULT_SOURCE,
     current: 0,
+    carouselDay: "",
     isCarousel: false,
     isAdult: false,
     themeMode: "auto",
@@ -68,6 +72,7 @@ export function getSettings(): Settings {
     return {
         source: typeof raw.source === "string" && raw.source.trim() ? raw.source : DEFAULT_SOURCE,
         current: Number.isFinite(raw.current as number) ? Number(raw.current) : 0,
+        carouselDay: typeof raw.carouselDay === "string" ? raw.carouselDay : "",
         isCarousel: Boolean(raw.isCarousel),
         isAdult: Boolean(raw.isAdult),
         themeMode,
@@ -102,7 +107,9 @@ export function getCarouselSources(settings: Settings): string[] {
 
 /**
  * 解析当前应展示的来源。
- * 轮播模式下，advance=true 时推进到下一个来源并写回 Storage（供小组件每次刷新调用）。
+ * 轮播模式下：
+ * - advance=true 且本地日期相对上次推进已跨天 → 切到下一个源并写回
+ * - 同一天内重复刷新 → 保持当前源，不切
  */
 export function resolveActiveSource(settings: Settings, advance = false): { type: string; settings: Settings } {
     if (!settings.isCarousel) {
@@ -120,8 +127,27 @@ export function resolveActiveSource(settings: Settings, advance = false): { type
         index = 0;
     }
 
-    if (advance) {
+    const today = getLocalDayKey();
+    const shouldAdvance = advance && settings.carouselDay !== today;
+
+    if (shouldAdvance) {
+        // 首次启用轮播（carouselDay 为空）时先锚定到当天，不立刻跳源
+        if (!settings.carouselDay) {
+            const nextSettings: Settings = { ...settings, current: index, carouselDay: today };
+            setSettings(nextSettings);
+            console.log(`[carousel] 锚定当天源 ${pool[index]} @ ${today}`);
+            return { type: pool[index], settings: nextSettings };
+        }
+
         index = (index + 1) % pool.length;
+        const nextSettings: Settings = { ...settings, current: index, carouselDay: today };
+        setSettings(nextSettings);
+        console.log(`[carousel] 跨日推进 → ${pool[index]} @ ${today}`);
+        return { type: pool[index], settings: nextSettings };
+    }
+
+    // 同一天内刷新：若 current 越界则纠正，但不改 carouselDay
+    if (index !== settings.current) {
         const nextSettings: Settings = { ...settings, current: index };
         setSettings(nextSettings);
         return { type: pool[index], settings: nextSettings };

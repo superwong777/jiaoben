@@ -1,0 +1,23 @@
+{
+  "runInApp": true,
+  "remoteResource": null,
+  "permissions": null,
+  "color": "rgba(142, 142, 147, 1)",
+  "version": "1.0.0",
+  "icon": "heart.text.square",
+  "name": "又多活了一天",
+  "iconImage": null,
+  "localizedNames": {
+    "zh": "又多活了一天",
+    "zh-Hans": "又多活了一天"
+  },
+  "author": null,
+  "description": "A minimal Apple-style page that counts natural days lived since your birthday.",
+  "entry": "index.tsx",
+  "intentInputTypes": [],
+  "contributors": [],
+  "localizedDescriptions": {
+    "zh": "输入生日，计算从出生当天到今天一共活了多少个自然日。",
+    "zh-Hans": "输入生日，计算从出生当天到今天一共活了多少个自然日。"
+  }
+}
